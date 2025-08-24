@@ -28,6 +28,7 @@ type Summary = {
     submissionsOverTime: { date: string; count: number }[];
     topAnimals: { name: string; count: number }[];
     topStates: { state: string; count: number }[];
+    topCities: { city: string; count: number }[];   // ← add this
   };
 };
 
@@ -52,6 +53,7 @@ function summarize(rows: Record<string, string>[]): Summary["summary"] {
   const byDay = new Map<string, number>();
   const byAnimal = new Map<string, number>();
   const byState = new Map<string, number>();
+  const byCity = new Map<string, number>();   // ← new
 
   for (const r of rows) {
     // ----- date → ISO (fixes "Invalid Date" in charts) -----
@@ -72,6 +74,9 @@ function summarize(rows: Record<string, string>[]): Summary["summary"] {
     // ----- state tally -----
     const s = (r["Estado"] || "").trim();
     if (s) byState.set(s, (byState.get(s) || 0) + 1);
+
+    const c = (r["Município"] || "").trim();   // ← from CSV
+    if (c) byCity.set(c, (byCity.get(c) || 0) + 1);
   }
 
   const submissionsOverTime = Array.from(byDay.entries())
@@ -88,11 +93,17 @@ function summarize(rows: Record<string, string>[]): Summary["summary"] {
     .sort((x, y) => y.count - x.count)
     .slice(0, 10);
 
+  const topCities = Array.from(byCity.entries())          // ← new
+    .map(([city, count]) => ({ city, count }))
+    .sort((x, y) => y.count - x.count)
+    .slice(0, 10);
+
   return {
     totals: { submissions: rows.length },
     submissionsOverTime,
     topAnimals,
     topStates,
+    topCities,
   };
 }
 
@@ -167,28 +178,54 @@ export default async function Page() {
         </div>
       </div>
 
-      {/* KPIs */}
-  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-6 pt-6">
-  <Kpi title="Total submissions" value={summary.totals.submissions.toLocaleString()} tone="a" />
-  <Kpi title="Top animal" value={summary.topAnimals[0]?.name ?? "—"} tone="b" />
-  <Kpi title="Top state" value={summary.topStates[0]?.state ?? "—"} />
+   {/* Left = KPIs (2 up, 1 down). Right = Top animals */}
+<div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+  {/* LEFT: KPI stack (takes 2 columns on large screens) */}
+  <div className="lg:col-span-2 grid grid-cols-2 gap-4">
+    <Kpi
+      title="Total submissions"
+      value={summary.totals.submissions.toLocaleString()}
+      tone="a"
+    />
+    <Kpi
+      title="Top state"
+      value={summary.topStates[0]?.state ?? "—"}
+      tone="b"
+    />
+    {/* bottom full-width KPI */}
+    <div  className="lg:col-span-2 grid grid-cols-2 gap-4">
+      <Kpi
+        title="Top animal"
+        value={summary.topAnimals[0]?.name ?? "—"}
+      />
+      <Kpi
+      title="Top city"
+      value={summary.topCities[0]?.city ?? "—"}
+      tone="b"
+    />
+    </div>
+  </div>
+
+  {/* RIGHT: Top animals list */}
+  <div className="lg:col-span-2">
+    <TopList
+      title="Most reported animals"
+      items={summary.topAnimals.map((a) => ({ label: a.name, count: a.count }))}
+    />
+  </div>
 </div>
 
+{/* Below: time-series + states (keep as you had) */}
+<div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+  <SubmissionsPanel data={summary.submissionsOverTime} />
+  <TopBar
+    title="Most reported states"
+    data={summary.topStates.map((s) => ({ label: s.state, count: s.count }))}
+    colorVar="var(--tone-b)"
+    horizontal
+  />
+</div>
 
-      {/* Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <SubmissionsPanel data={summary.submissionsOverTime} />
-        <TopList
-          title="Most reported animals"
-          items={summary.topAnimals.map((a) => ({ label: a.name, count: a.count }))}
-        />
-        <TopBar
-          title="Most reported states"
-          data={summary.topStates.map((s) => ({ label: s.state, count: s.count }))}
-          colorVar="var(--tone-b)"
-          horizontal  // ← swap X/Y
-        />
-      </div>
     </main>
   );
 }

@@ -17,6 +17,7 @@ export type Summary = {
     submissionsOverTime: { date: string; count: number }[];
     topAnimals: { name: string; count: number }[];
     topStates: { state: string; count: number }[];
+    topCities: { city: string; count: number }[]; // ← add this
   };
 };
 
@@ -69,10 +70,11 @@ export function DashboardClient({ initial }: { initial: Summary }) {
       </div>
 
       {/* KPIs */}
-   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
   <Kpi title="Total submissions" value={summary.totals.submissions.toLocaleString()} variant="duo-a" />
   <Kpi title="Top animal" value={summary.topAnimals[0]?.name ?? "—"} variant="duo-b" />
-  <Kpi title="Top state" value={summary.topStates[0]?.state ?? "—"} />
+  <Kpi title="Top state" value={summary.topStates[0]?.state ?? "—"} />  
+  <Kpi title="Top city" value={summary.topCities[0]?.city ?? "—"} />
 </div>
 
 
