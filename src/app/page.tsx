@@ -1,9 +1,11 @@
-import { parse } from "csv-parse/sync";
 import { headers as nextHeaders } from "next/headers";
-import { ClientParts } from "@/components/ClientParts";
+import { parse } from "csv-parse/sync";
 import iconv from "iconv-lite";
+import { TopBar } from "@/components/TopBar";
+import { TopList } from "@/components/TopList";
+import { SubmissionsPanel } from "@/components/SubmissionsPanel";
 
-// 🔖 Columns to display (and order)
+
 const desiredHeaders = [
   "Id Registro",
   "Data Observacao",
@@ -17,30 +19,111 @@ const desiredHeaders = [
   "Longitude",
 ];
 
-async function getRows() {
-  // Next 15: headers() is async
+type Summary = {
+  updatedAt: string;
+  headers: string[];
+  rows: Record<string, string>[];
+  summary: {
+    totals: { submissions: number };
+    submissionsOverTime: { date: string; count: number }[];
+    topAnimals: { name: string; count: number }[];
+    topStates: { state: string; count: number }[];
+  };
+};
+
+function normalizeAnimal(name: string) {
+  return name.replace(/^\s*ave[:\-]?\s*/i, "").trim();
+}
+
+function toISODate(dmy: string): string | null {
+  // input like "02/03/2025" (dd/MM/yyyy) → "2025-03-02"
+  const [dd, mm, yyyy] = dmy.split("/");
+  if (!dd || !mm || !yyyy) return null;
+  const d = Number(dd), m = Number(mm), y = Number(yyyy);
+  if (!d || !m || !y) return null;
+  // zero-pad
+  const dd2 = String(d).padStart(2, "0");
+  const mm2 = String(m).padStart(2, "0");
+  return `${y}-${mm2}-${dd2}`;
+}
+
+
+function summarize(rows: Record<string, string>[]): Summary["summary"] {
+  const byDay = new Map<string, number>();
+  const byAnimal = new Map<string, number>();
+  const byState = new Map<string, number>();
+
+  for (const r of rows) {
+    // ----- date → ISO (fixes "Invalid Date" in charts) -----
+    const rawDate = (r["Data Observacao"] || "").slice(0, 10); // e.g. "02/03/2025"
+    let iso: string | null = null;
+    if (rawDate.includes("/")) {
+      iso = toISODate(rawDate);            // dd/MM/yyyy → yyyy-MM-dd
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+      iso = rawDate;                        // already ISO
+    }
+    if (iso) byDay.set(iso, (byDay.get(iso) || 0) + 1);
+
+    // ----- animal label cleanup (drops "Ave:" etc.) -----
+    const aRaw = (r["Tipo Animal"] || "").trim();
+    const a = normalizeAnimal(aRaw);
+    if (a) byAnimal.set(a, (byAnimal.get(a) || 0) + 1);
+
+    // ----- state tally -----
+    const s = (r["Estado"] || "").trim();
+    if (s) byState.set(s, (byState.get(s) || 0) + 1);
+  }
+
+  const submissionsOverTime = Array.from(byDay.entries())
+    .map(([date, count]) => ({ date, count }))
+    .sort((x, y) => x.date.localeCompare(y.date));
+
+  const topAnimals = Array.from(byAnimal.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((x, y) => y.count - x.count)
+    .slice(0, 10);
+
+  const topStates = Array.from(byState.entries())
+    .map(([state, count]) => ({ state, count }))
+    .sort((x, y) => y.count - x.count)
+    .slice(0, 10);
+
+  return {
+    totals: { submissions: rows.length },
+    submissionsOverTime,
+    topAnimals,
+    topStates,
+  };
+}
+
+
+async function baseUrl() {
   const h = await nextHeaders();
-
-  // Build absolute base URL (proxy-aware)
   const host = h.get("x-forwarded-host") ?? h.get("host")!;
-  const protocol = h.get("x-forwarded-proto") ?? (process.env.VERCEL ? "https" : "http");
-  const base = `${protocol}://${host}`;
+  const proto = h.get("x-forwarded-proto") ?? (process.env.VERCEL ? "https" : "http");
+  return `${proto}://${host}`;
+}
 
-  // Fetch live CSV via our proxy route
+async function getSummary(): Promise<Summary | null> {
+  const base = await baseUrl();
+  const res = await fetch(`${base}/api/summary`, { cache: "no-store" });
+  if (!res.ok) return null;
+  return res.json();
+}
+
+async function getLiveCsvRows(): Promise<Record<string, string>[]> {
+  const base = await baseUrl();
   const res = await fetch(`${base}/api/source-csv`, { cache: "no-store" });
   if (!res.ok) throw new Error(`Failed to load CSV (${res.status})`);
 
-  // Decode explicitly as Latin-1 (fixes accents)
   const buf = Buffer.from(await res.arrayBuffer());
   const csv = iconv.decode(buf, "latin1");
 
-  // Guard: if server sent HTML/error instead of CSV
   const ct = res.headers.get("content-type") || "";
   if (ct.includes("text/html") || /^<!doctype html/i.test(csv) || /<html/i.test(csv)) {
     throw new Error("Source returned HTML instead of CSV. Open /api/source-csv to inspect.");
   }
 
-  // Parse semicolon-separated CSV
   const allRows = parse(csv, {
     columns: (header: string[]) => header.map((h) => h.trim()),
     skip_empty_lines: true,
@@ -51,30 +134,78 @@ async function getRows() {
     trim: true,
   }) as Record<string, string>[];
 
-  // Keep only the desired columns (and preserve order)
-  const filteredRows = allRows.map((row) => {
+  return allRows.map((row) => {
     const out: Record<string, string> = {};
-    for (const col of desiredHeaders) {
-      out[col] = row[col] ?? "";
-    }
+    for (const col of desiredHeaders) out[col] = row[col] ?? "";
     return out;
   });
-
-  return filteredRows;
 }
 
 export default async function Page() {
-  const rows = await getRows();
-  const cols = desiredHeaders;
+  // Try fast JSON; fall back to live CSV
+  const pre = await getSummary();
+  let updatedAt: string;
+  let rows: Record<string, string>[];
+  let summary: Summary["summary"];
+
+  if (pre) {
+    updatedAt = pre.updatedAt;
+    rows = pre.rows;
+    summary = pre.summary;
+  } else {
+    rows = await getLiveCsvRows();
+    updatedAt = new Date().toISOString();
+    summary = summarize(rows);
+  }
 
   return (
-    <main className="p-6 space-y-4">
-      <h1 className="text-xl font-semibold">SISS-Geo Data (live)</h1>
-      {rows.length ? (
-        <ClientParts headers={cols} rows={rows} />
-      ) : (
-        <p className="text-sm text-muted-foreground">No data.</p>
-      )}
+    <main className=" min-h-screen p-6 md:p-10">
+      <div className="mx-auto max-w-6xl grid mb-6">
+        <h1 className="text-xl font-semibold">SISS-Geo Dashboard</h1>
+        <div className="text-sm text-muted-foreground">
+          {`Last updated: ${new Date(updatedAt).toLocaleString()}`}
+        </div>
+      </div>
+
+      {/* KPIs */}
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-6 pt-6">
+  <Kpi title="Total submissions" value={summary.totals.submissions.toLocaleString()} tone="a" />
+  <Kpi title="Top animal" value={summary.topAnimals[0]?.name ?? "—"} tone="b" />
+  <Kpi title="Top state" value={summary.topStates[0]?.state ?? "—"} />
+</div>
+
+
+      {/* Charts */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <SubmissionsPanel data={summary.submissionsOverTime} />
+        <TopList
+          title="Most reported animals"
+          items={summary.topAnimals.map((a) => ({ label: a.name, count: a.count }))}
+        />
+        <TopBar
+          title="Most reported states"
+          data={summary.topStates.map((s) => ({ label: s.state, count: s.count }))}
+          colorVar="var(--tone-b)"
+          horizontal  // ← swap X/Y
+        />
+      </div>
     </main>
   );
 }
+
+function Kpi({ title, value, tone }: { title: string; value: string; tone?: "a" | "b" }) {
+  const bgClass =
+    tone === "a"
+      ? "bg-[var(--tone-a)]/10 text-[var(--tone-a)]"
+      : tone === "b"
+      ? "bg-[var(--tone-b)]/10 text-[var(--tone-b)]"
+      : "bg-[var(--panel)]";
+
+  return (
+    <div className={`card p-5 ${bgClass}`}>
+      <div className="text-sm text-muted-foreground">{title}</div>
+      <div className="text-2xl font-semibold">{value}</div>
+    </div>
+  );
+}
+

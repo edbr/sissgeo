@@ -1,7 +1,5 @@
 @import "tailwindcss";
-@import "tw-animate-css";
-
-@custom-variant dark (&:is(.dark *));
+@plugin "tailwindcss-animate";
 
 @theme inline {
   --color-background: var(--background);
@@ -41,9 +39,16 @@
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+    --shadow-soft: 0 30px 60px rgba(15,23,42,.08), 0 1px 0 rgba(255,255,255,.6) inset;
 }
 
 :root {
+  --surface: #F7F3EE;        /* brand.cream */
+  --panel:   #FFFFFF;
+  --ink:     #0F172A;         /* brand.ink */
+    /* duotone pair (swap these to invert) */
+  --tone-a: #B85A3E;          /* terracotta */
+  --tone-b: #2E6B5E;          /* forest */
   --radius: 0.625rem;
   --background: oklch(1 0 0);
   --foreground: oklch(0.145 0 0);
@@ -62,7 +67,7 @@
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
+    --ring: rgba(15,23,42,.08);
   --chart-1: oklch(0.646 0.222 41.116);
   --chart-2: oklch(0.6 0.118 184.704);
   --chart-3: oklch(0.398 0.07 227.392);
@@ -119,4 +124,32 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+html, body { background: var(--surface); color: var(--ink); }
+
+.body-bg {
+  /* subtle radial + vignette like the mock */
+  background:
+    radial-gradient(1200px 600px at 10% -10%, rgba(184,90,62,.10), transparent 60%),
+    radial-gradient(1200px 600px at 110% -10%, rgba(46,107,94,.10), transparent 60%),
+    linear-gradient(180deg, rgba(15,23,42,.03), rgba(255,255,255,0));
+}
+
+.card {
+  @apply rounded-2xl bg-[var(--panel)] shadow-soft border border-white/60;
+  box-shadow:
+    0 30px 60px rgba(15,23,42,.08),
+    0 1px 0 rgba(255,255,255,.6) inset;
+}
+
+/* gradient cards for KPI */
+.card-duo-a { background: linear-gradient(135deg, color-mix(in oklab, var(--tone-a) 18%, white) 0%, white 80%); }
+.card-duo-b { background: linear-gradient(135deg, color-mix(in oklab, var(--tone-b) 18%, white) 0%, white 80%); }
+
+/* pill */
+.pill {
+  @apply rounded-full px-2.5 py-1 text-xs font-medium;
+  background: color-mix(in oklab, var(--tone-b) 12%, white);
+  color: color-mix(in oklab, var(--tone-b) 60%, black);
 }

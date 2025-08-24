@@ -1,80 +1,132 @@
 import { NextResponse } from "next/server";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import iconv from "iconv-lite";
+import { parse } from "csv-parse/sync";
 
-// 1) Small helper to extract hidden inputs from the HTML:
-function getHidden(name: string, html: string) {
-  const m = html.match(new RegExp(
-    `<input[^>]*name=["']${name}["'][^>]*value=["']([^"']+)["']`,
-    "i"
-  ));
-  return m?.[1] ?? "";
+export const runtime = "nodejs";
+
+const s3 = new S3Client({
+  region: process.env.AWS_REGION,
+  credentials: process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY
+    ? { accessKeyId: process.env.AWS_ACCESS_KEY_ID!, secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY! }
+    : undefined,
+});
+
+// change if your S3_KEY is different
+const CSV_KEY = process.env.S3_KEY || "latest.csv";
+const JSON_KEY = CSV_KEY.replace(/\.csv$/i, ".json");
+
+const desiredHeaders = [
+  "Id Registro","Data Observacao","Tipo Animal","Nome científico","Nível Taxonômico",
+  "Status Validação","Estado","Município","Latitude","Longitude",
+];
+
+function normalizeAnimal(name: string) {
+  // drop leading "Ave:" (any case, with/without spaces/colon)
+  return name.replace(/^\s*ave[:\-]?\s*/i, "").trim();
+}
+
+function summarize(rows: Record<string, string>[]) {
+  // submissions per day (YYYY-MM-DD)
+  const byDay = new Map<string, number>();
+  // top animals
+  const byAnimal = new Map<string, number>();
+  // top states
+  const byState = new Map<string, number>();
+
+  
+  for (const r of rows) {
+    const d = (r["Data Observacao"] || "").slice(0, 10); // assume yyyy-mm-dd
+    if (d) byDay.set(d, (byDay.get(d) || 0) + 1);
+
+      // 🔧 normalize animal label
+    const aRaw = (r["Tipo Animal"] || "").trim();
+    const a = normalizeAnimal(aRaw);
+    if (a) byAnimal.set(a, (byAnimal.get(a) || 0) + 1);
+
+    const s = (r["Estado"] || "").trim();
+    if (s) byState.set(s, (byState.get(s) || 0) + 1);
+  }
+
+  const submissionsOverTime = Array.from(byDay.entries())
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+
+  const topAnimals = Array.from(byAnimal.entries())
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  const topStates = Array.from(byState.entries())
+    .map(([state, count]) => ({ state, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  return {
+    totals: { submissions: rows.length },
+    submissionsOverTime,
+    topAnimals,
+    topStates,
+  };
 }
 
 export async function GET() {
-  const BASE = "https://sissgeo.lncc.br";
-  const PATH = "/mapaRegistrosInicial.xhtml";
-  const url = BASE + PATH;
+  try {
+    // 1) Get live CSV via your proxy
+    const baseUrl = `https://` + (process.env.VERCEL_URL || "localhost:3000");
+    const res = await fetch(`${baseUrl}/api/source-csv`, { cache: "no-store" });
+    if (!res.ok) return NextResponse.json({ error: "source fetch failed", status: res.status }, { status: 502 });
 
-  // Keep cookies between requests
-  let cookies = "";
+    const csvBuf = Buffer.from(await res.arrayBuffer());
 
-  // 2) Fetch page (capture cookies + ViewState)
-  const pageRes = await fetch(url, { method: "GET" });
-  if (!pageRes.ok) {
-    return NextResponse.json({ error: "Failed initial GET" }, { status: 502 });
-  }
-  const setCookie = pageRes.headers.get("set-cookie");
-  if (setCookie) cookies = setCookie;
-  const html = await pageRes.text();
+    // 2) Save CSV
+    await s3.send(new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET!,
+      Key: CSV_KEY,
+      Body: csvBuf,
+      ContentType: "text/csv; charset=latin1",
+      CacheControl: "no-cache",
+    }));
 
-  // Typically:
-  // - form id/name from your snippet: "formDadosNoMapa"
-  // - export button id looked like "j_idt264"
-  const FORM = "formDadosNoMapa";
-  const BUTTON = "j_idt264";
+    // 3) Decode + parse ➜ reduce columns
+    const csv = iconv.decode(csvBuf, "latin1");
+    const allRows = parse(csv, {
+      columns: (h: string[]) => h.map((x) => x.trim()),
+      skip_empty_lines: true,
+      delimiter: ";",
+      relax_quotes: true,
+      relax_column_count: true,
+      trim: true,
+    }) as Record<string, string>[];
 
-  const viewState = getHidden("javax.faces.ViewState", html);
-  if (!viewState) {
-    return NextResponse.json({ error: "ViewState not found" }, { status: 500 });
-  }
+    const rows = allRows.map((row) => {
+      const r: Record<string, string> = {};
+      for (const col of desiredHeaders) r[col] = row[col] ?? "";
+      return r;
+    });
 
-  // 3) Build the POST body as a standard JSF form submit
-  // NOTE: Many PrimeFaces exports are *non-AJAX* submits (no javax.faces.partial.ajax)
-  const body = new URLSearchParams({
-    // the form name/id must be posted with any value (often the form id itself)
-    [FORM]: FORM,
-    // trigger the action by sending the link/button id param
-    [BUTTON]: BUTTON,
-    // include the view state
-    "javax.faces.ViewState": viewState,
-  });
+    // 4) Summaries + timestamp
+    const summary = summarize(rows);
+    const payload = {
+      updatedAt: new Date().toISOString(),
+      headers: desiredHeaders,
+      rows,
+      summary,
+    };
 
-  const postRes = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-      ...(cookies ? { "Cookie": cookies } : {}),
-    },
-    body: body.toString(),
-  });
+    // 5) Save JSON
+    const jsonBuf = Buffer.from(JSON.stringify(payload));
+    await s3.send(new PutObjectCommand({
+      Bucket: process.env.S3_BUCKET!,
+      Key: JSON_KEY,
+      Body: jsonBuf,
+      ContentType: "application/json",
+      CacheControl: "public, max-age=60",
+    }));
 
-  if (!postRes.ok) {
-    return NextResponse.json({ error: "Export POST failed" }, { status: 502 });
-  }
-
-  // 4) The response should be the CSV file (check Content-Disposition / type)
-  const contentType = postRes.headers.get("content-type") || "";
-  const buf = Buffer.from(await postRes.arrayBuffer());
-
-  // (Optional) Save to S3
-  const s3 = new S3Client({ region: process.env.AWS_REGION });
-  await s3.send(new PutObjectCommand({
-    Bucket: process.env.S3_BUCKET!,
-    Key: "sissgeo/latest.csv",
-    Body: buf,
-    ContentType: contentType || "text/csv",
-    CacheControl: "public, max-age=0, must-revalidate",
-  }));
-
-  return NextResponse.json({ ok: true, bytes: buf.length, contentType });
+    return NextResponse.json({ ok: true, csvKey: CSV_KEY, jsonKey: JSON_KEY, rows: rows.length });
+  } catch (e: unknown) {
+  const msg = e instanceof Error ? e.message : "refresh failed";
+  return NextResponse.json({ error: msg }, { status: 500 });
+}
 }
