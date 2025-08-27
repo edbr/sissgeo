@@ -81,6 +81,7 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  --map-hover: oklch(85% 0.15 140); /* tweak to your branding */
 }
 
 .dark {
@@ -152,4 +153,35 @@ html, body { background: var(--surface); color: var(--ink); }
   @apply rounded-full px-2.5 py-1 text-xs font-medium;
   background: color-mix(in oklab, var(--tone-b) 12%, white);
   color: color-mix(in oklab, var(--tone-b) 60%, black);
+}
+
+
+/* loading */
+@keyframes stripes {
+  0%   { background-position: 0 0;   }
+  100% { background-position: 40px 0;}
+}
+
+.animate-loading-stripes {
+  background-image: linear-gradient(
+    120deg,
+    rgba(0,0,0,0.06) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(0,0,0,0.06) 50%,
+    rgba(0,0,0,0.06) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 40px 40px;
+  animation: stripes 1s linear infinite;
+}
+
+@keyframes fadein {
+  from { opacity: 0; transform: translateY(2px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.fade-in {
+  animation: fadein .35s ease-out both;
 }

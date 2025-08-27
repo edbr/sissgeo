@@ -17,12 +17,14 @@ export function SubmissionsChart({
       <ResponsiveContainer width="100%" height="100%">
         <AreaChart data={data} margin={{ left: 8, right: 8, top: 8, bottom: 8 }}>
           <CartesianGrid strokeDasharray="3 3" />
-          <XAxis
+         <XAxis
             dataKey="date"
-            minTickGap={32}
-            tickFormatter={(d) =>
-              new Date(d).toLocaleDateString("pt-BR", { month: "short", year: "numeric" })
-            }
+            tickFormatter={(d: string) => {
+              const dt = new Date(d);
+              const dd = String(dt.getDate()).padStart(2, "0");
+              const mm = String(dt.getMonth() + 1).padStart(2, "0");
+              return `${dd}/${mm}`;
+            }}
           />
           <YAxis allowDecimals={false} />
           <Tooltip labelFormatter={(d) => new Date(d as string).toLocaleDateString("pt-BR")} />

@@ -1,10 +1,11 @@
 import { headers as nextHeaders } from "next/headers";
 import { parse } from "csv-parse/sync";
 import iconv from "iconv-lite";
-import { TopBar } from "@/components/TopBar";
-import { TopList } from "@/components/TopList";
+import { TopList } from "@/components/TopList"; 
 import { SubmissionsPanel } from "@/components/SubmissionsPanel";
-
+import { TopStatesMap } from "@/components/TopStatesMap";
+import { Activity, MapPinned, PawPrint, Building2 } from "lucide-react"; 
+import { KpiCard } from "@/components/KpiCard";
 
 const desiredHeaders = [
   "Id Registro",
@@ -170,79 +171,66 @@ export default async function Page() {
   }
 
   return (
-    <main className=" min-h-screen p-6 md:p-10">
-      <div className="mx-auto max-w-6xl grid mb-6">
-        <h1 className="text-xl font-semibold">SISS-Geo Dashboard</h1>
-        <div className="text-sm text-muted-foreground">
-          {`Last updated: ${new Date(updatedAt).toLocaleString()}`}
-        </div>
+  <main className="min-h-screen p-6 md:p-10 fade-in">
+    <div className="mx-auto max-w-6xl grid mb-6">
+      <h1 className="text-xl font-semibold">SISS-Geo Dashboard</h1>
+      <div className="text-sm text-muted-foreground">
+        {`Last updated: ${new Date(updatedAt).toLocaleString()}`}
+      </div>
+    </div>
+
+    {/* Row 1: KPIs (left) + TopList (right) */}
+    <div className="mx-auto max-w-6xl grid grid-cols-1 lg:grid-cols-4 gap-6">
+      {/* LEFT: 2x2 KPI grid spans 2 columns on large screens */}
+      <div className="lg:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-6">
+        <KpiCard
+          title="Total submissions"
+          value={summary.totals.submissions.toLocaleString()}
+          tone="a"
+          icon={<Activity className="h-5 w-5" />}
+          hint="All-time"
+        />
+        <KpiCard
+          title="Top state"
+          value={summary.topStates[0]?.state ?? "—"}
+          tone="b"
+          icon={<MapPinned className="h-5 w-5" />}
+          hint="By report count"
+        />
+        <KpiCard
+          title="Top animal"
+          value={summary.topAnimals[0]?.name ?? "—"}
+          tone="ink"
+          icon={<PawPrint className="h-5 w-5" />}
+        />
+        <KpiCard
+          title="Top city"
+          value={summary.topCities[0]?.city ?? "—"}
+          tone="b"
+          icon={<Building2 className="h-5 w-5" />}
+        />
       </div>
 
-   {/* Left = KPIs (2 up, 1 down). Right = Top animals */}
-<div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-  {/* LEFT: KPI stack (takes 2 columns on large screens) */}
-  <div className="lg:col-span-2 grid grid-cols-2 gap-4">
-    <Kpi
-      title="Total submissions"
-      value={summary.totals.submissions.toLocaleString()}
-      tone="a"
-    />
-    <Kpi
-      title="Top state"
-      value={summary.topStates[0]?.state ?? "—"}
-      tone="b"
-    />
-    {/* bottom full-width KPI */}
-    <div  className="lg:col-span-2 grid grid-cols-2 gap-4">
-      <Kpi
-        title="Top animal"
-        value={summary.topAnimals[0]?.name ?? "—"}
+      {/* RIGHT: TopList */}
+      <div className="lg:col-span-2">
+        <TopList
+          title="Submissions by animal"
+          items={summary.topAnimals.map(a => ({ label: a.name, count: a.count }))}
+        />
+      </div>
+    </div>
+
+    {/* Row 2: Time series + States map */}
+    <div className="mx-auto max-w-6xl mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <SubmissionsPanel data={summary.submissionsOverTime} />
+      <TopStatesMap
+        title="Most reported states"
+        data={summary.topStates}
       />
-      <Kpi
-      title="Top city"
-      value={summary.topCities[0]?.city ?? "—"}
-      tone="b"
-    />
     </div>
-  </div>
-
-  {/* RIGHT: Top animals list */}
-  <div className="lg:col-span-2">
-    <TopList
-      title="Most reported animals"
-      items={summary.topAnimals.map((a) => ({ label: a.name, count: a.count }))}
-    />
-  </div>
-</div>
-
-{/* Below: time-series + states (keep as you had) */}
-<div className="mt-6 grid grid-cols-1 lg:grid-cols-2 gap-6">
-  <SubmissionsPanel data={summary.submissionsOverTime} />
-  <TopBar
-    title="Most reported states"
-    data={summary.topStates.map((s) => ({ label: s.state, count: s.count }))}
-    colorVar="var(--tone-b)"
-    horizontal
-  />
-</div>
-
-    </main>
-  );
-}
-
-function Kpi({ title, value, tone }: { title: string; value: string; tone?: "a" | "b" }) {
-  const bgClass =
-    tone === "a"
-      ? "bg-[var(--tone-a)]/10 text-[var(--tone-a)]"
-      : tone === "b"
-      ? "bg-[var(--tone-b)]/10 text-[var(--tone-b)]"
-      : "bg-[var(--panel)]";
-
-  return (
-    <div className={`card p-5 ${bgClass}`}>
-      <div className="text-sm text-muted-foreground">{title}</div>
-      <div className="text-2xl font-semibold">{value}</div>
+    <div className="mx-auto max-w-6xl mt-6">
+    <a href="https://sissgeo.lncc.br/mapaRegistrosInicial.xhtml">Source data: Siss Geo</a>
     </div>
-  );
+  </main>
+);
 }
-
