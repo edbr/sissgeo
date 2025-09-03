@@ -6,6 +6,7 @@ import { SubmissionsPanel } from "@/components/SubmissionsPanel";
 import { TopStatesMap } from "@/components/TopStatesMap";
 import { Activity, MapPinned, PawPrint, Building2 } from "lucide-react"; 
 import { KpiCard } from "@/components/KpiCard";
+import { SpeedInsights } from "@vercel/speed-insights/next"
 
 const desiredHeaders = [
   "Id Registro",
@@ -231,6 +232,7 @@ export default async function Page() {
     <div className="mx-auto max-w-6xl mt-6">
     <a href="https://sissgeo.lncc.br/mapaRegistrosInicial.xhtml">Source data: Siss Geo</a>
     </div>
+    <SpeedInsights />
   </main>
 );
 }
