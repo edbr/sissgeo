@@ -6,6 +6,8 @@ import { Activity, MapPinned, PawPrint, Building2 } from "lucide-react";
 import { KpiCard } from "@/components/KpiCard";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import { RefreshNow } from "@/components/RefreshNow";
+import { YesterdayTable } from "@/components/YesterdayTable";
+
 
 type Summary = {
   updatedAt: string;
@@ -125,7 +127,7 @@ export default async function Page() {
         <SubmissionsPanel data={summary.submissionsOverTime} />
         <TopStatesMap title="Most reported states" data={summary.topStates} />
       </div>
-
+   <YesterdayTable />
       <div className="mx-auto max-w-6xl mt-6">
         <a href="https://sissgeo.lncc.br/mapaRegistrosInicial.xhtml">Source data: SISS-Geo</a>
       </div>
