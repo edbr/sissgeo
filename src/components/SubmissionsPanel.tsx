@@ -37,7 +37,10 @@ export function SubmissionsPanel({ data }: { data: Point[] }) {
     if (cfg.days === Infinity) return data;
     // subtract N days (inclusive of today)
     cutoff.setDate(now.getDate() - (cfg.days - 1));
-    return data.filter((p) => new Date(p.date + "T00:00:00") >= cutoff);
+    return data.filter((p) => {
+      const d = new Date(p.date + "T00:00:00");
+      return d >= cutoff;
+    });
   }, [data, range]);
 
   // 2) Convert to time series (ms since epoch)
@@ -51,43 +54,41 @@ export function SubmissionsPanel({ data }: { data: Point[] }) {
   );
 
   // 3) Build exactly 6 evenly-spaced ticks
-// 3) Build ticks but drop the last one (to avoid clipping)
-const ticks = React.useMemo(() => {
-  if (!timeData.length) return [] as number[];
-  const min = timeData[0].t;
-  const max = timeData[timeData.length - 1].t;
-  if (min === max) return [min];
-  const step = (max - min) / 5; // would give 6 ticks
-  const raw = Array.from({ length: 6 }, (_, i) => Math.round(min + i * step));
-  return raw.slice(0, -1); // drop last tick
-}, [timeData]);
-
-
+  const ticks = React.useMemo(() => {
+    if (!timeData.length) return [] as number[];
+    const values = timeData.map((d) => d.t);
+    const min = Math.min(...values);
+    const max = Math.max(...values);
+    if (min === max) return [min];
+    const step = (max - min) / 5;
+    return Array.from({ length: 6 }, (_, i) => Math.round(min + i * step));
+  }, [timeData]);
 
   return (
     <div className="card p-4">
-      {/* Header + filters (left-aligned) */}
+      {/* Header + filters */}
       <div className="mb-3 flex flex-wrap items-center justify-start gap-2">
         <div className="font-medium mr-3">Submissions over time</div>
-            <div className="flex flex-wrap gap-2">
-            {RANGES.map((r) => {
-              const active = range === r.key;
-              return (
-                <button
-                  key={r.key}
-                  onClick={() => setRange(r.key)}
-                  className={[
-                    "rounded-full px-3 py-1 text-sm border transition",
-                    active
-                      ? "bg-[var(--tone-b)] text-white border-[var(--tone-b)]"
-                      : "bg-white/70 border-white/70 hover:bg-white",
-                  ].join(" ")}
-                  aria-pressed={active}
-                >
-                  {r.label}
-                </button>
-              );
-            })}</div>
+        <div className="flex flex-wrap gap-2">
+          {RANGES.map((r) => {
+            const active = range === r.key;
+            return (
+              <button
+                key={r.key}
+                onClick={() => setRange(r.key)}
+                className={[
+                  "rounded-full px-3 py-1 text-sm border transition",
+                  active
+                    ? "bg-[var(--tone-b)] text-white border-[var(--tone-b)]"
+                    : "bg-white/70 border-white/70 hover:bg-white",
+                ].join(" ")}
+                aria-pressed={active}
+              >
+                {r.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Chart */}
@@ -95,7 +96,7 @@ const ticks = React.useMemo(() => {
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart
             data={timeData}
-            margin={{ top: 8, right: 36, left: -18, bottom: 0 }} // flush left
+            margin={{ top: 8, right: 36, left: -18, bottom: 0 }}
           >
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis
@@ -105,7 +106,7 @@ const ticks = React.useMemo(() => {
               domain={["dataMin", "dataMax"]}
               ticks={ticks}
               tickMargin={4}
-              tick={{ fontSize: 12, textAnchor: "start" }} // left-align labels
+              tick={{ fontSize: 12, textAnchor: "start" }}
               tickFormatter={(ms: number) => {
                 const d = new Date(ms);
                 const dd = String(d.getDate()).padStart(2, "0");
@@ -114,10 +115,11 @@ const ticks = React.useMemo(() => {
               }}
             />
             <YAxis allowDecimals={false} tick={{ fontSize: 12 }} />
-               <Tooltip
-              labelFormatter={(ms) =>
-                new Date(ms as number).toLocaleDateString("pt-BR")
-              }
+            <Tooltip
+              labelFormatter={(ms) => {
+                const d = new Date(Number(ms));
+                return d.toLocaleDateString("pt-BR");
+              }}
             />
             <Area
               type="monotone"
