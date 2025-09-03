@@ -7,6 +7,7 @@ import { TopStatesMap } from "@/components/TopStatesMap";
 import { Activity, MapPinned, PawPrint, Building2 } from "lucide-react"; 
 import { KpiCard } from "@/components/KpiCard";
 import { SpeedInsights } from "@vercel/speed-insights/next"
+import { RefreshNow } from "@/components/RefreshNow";
 
 const desiredHeaders = [
   "Id Registro",
@@ -173,12 +174,19 @@ export default async function Page() {
 
   return (
   <main className="min-h-screen p-6 md:p-10 fade-in">
-    <div className="mx-auto max-w-6xl grid mb-6">
+<div className="mx-auto max-w-6xl grid mb-6">
+  <div className="flex items-end justify-between gap-4">
+    <div>
       <h1 className="text-xl font-semibold">SISS-Geo Dashboard</h1>
       <div className="text-sm text-muted-foreground">
         {`Last updated: ${new Date(updatedAt).toLocaleString()}`}
       </div>
     </div>
+
+    {/* No function props passed to client component */}
+    <RefreshNow downloadAfter={false} />
+  </div>
+</div>
 
     {/* Row 1: KPIs (left) + TopList (right) */}
     <div className="mx-auto max-w-6xl grid grid-cols-1 lg:grid-cols-4 gap-6">
